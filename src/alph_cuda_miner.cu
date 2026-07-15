@@ -323,6 +323,17 @@ static std::vector<uint8_t> target_from_difficulty(double difficulty) {
     if (divisor == 0) divisor = 1;
 
     std::vector<uint8_t> target(32, 0xff);
+    // Alephium pool difficulty is scaled by a base work unit. Empirically and
+    // by pool share cadence, one difficulty unit is about 2^34 Blake3 hashes.
+    for (int shift = 0; shift < 34; ++shift) {
+        uint8_t carry = 0;
+        for (uint8_t &byte : target) {
+            uint8_t next_carry = byte & 1u;
+            byte = (uint8_t)((byte >> 1) | (carry << 7));
+            carry = next_carry;
+        }
+    }
+
     uint64_t remainder = 0;
     for (uint8_t &byte : target) {
         uint64_t value = (remainder << 8) | byte;
