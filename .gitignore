@@ -1,0 +1,9 @@
+alph-cuda-miner
+alph-cuda-miner.exe
+build/
+*.o
+*.obj
+*.pdb
+*.ilk
+*.log
+
