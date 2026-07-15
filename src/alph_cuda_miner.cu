@@ -32,7 +32,7 @@ using socket_t = int;
 static constexpr socket_t INVALID_SOCKET_T = -1;
 #endif
 
-#define MAX_HEADER_BYTES 256
+#define MAX_HEADER_BYTES 512
 
 static __constant__ uint8_t C_HEADER[MAX_HEADER_BYTES];
 static __constant__ uint8_t C_TARGET[32];
