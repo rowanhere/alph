@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -302,9 +304,32 @@ static std::vector<uint8_t> hex_to_bytes(std::string hex) {
     std::vector<uint8_t> out;
     out.reserve(hex.size() / 2);
     for (size_t i = 0; i < hex.size(); i += 2) {
+        char a = hex[i];
+        char b = hex[i + 1];
+        if (!std::isxdigit((unsigned char)a) || !std::isxdigit((unsigned char)b)) {
+            throw std::runtime_error("invalid hex string: " + hex);
+        }
         out.push_back((uint8_t)std::stoul(hex.substr(i, 2), nullptr, 16));
     }
     return out;
+}
+
+static std::vector<uint8_t> target_from_difficulty(double difficulty) {
+    if (difficulty <= 0.0 || !std::isfinite(difficulty)) {
+        throw std::runtime_error("invalid pool difficulty");
+    }
+
+    uint64_t divisor = (uint64_t)std::ceil(difficulty);
+    if (divisor == 0) divisor = 1;
+
+    std::vector<uint8_t> target(32, 0xff);
+    uint64_t remainder = 0;
+    for (uint8_t &byte : target) {
+        uint64_t value = (remainder << 8) | byte;
+        byte = (uint8_t)(value / divisor);
+        remainder = value % divisor;
+    }
+    return target;
 }
 
 static std::string nonce_to_hex(uint64_t nonce, uint32_t bytes) {
@@ -407,8 +432,8 @@ static std::string get_json_string_field(const std::string &json, const std::str
     if (p == std::string::npos) return "";
     p = json.find(':', p);
     if (p == std::string::npos) return "";
-    p = json.find('"', p);
-    if (p == std::string::npos) return "";
+    p = json.find_first_not_of(" \t\r\n", p + 1);
+    if (p == std::string::npos || json[p] != '"') return "";
     size_t e = p + 1;
     while (true) {
         e = json.find('"', e);
@@ -465,6 +490,19 @@ static std::vector<std::string> json_strings_in(const std::string &s) {
         p = e + 1;
     }
     return out;
+}
+
+static bool first_json_number_in_params(const std::string &json, double &value) {
+    std::string params = params_substring(json);
+    size_t p = params.find_first_of("-0123456789");
+    if (p == std::string::npos) return false;
+    size_t e = params.find_first_not_of("0123456789.eE+-", p);
+    try {
+        value = std::stod(params.substr(p, e == std::string::npos ? std::string::npos : e - p));
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 static int nonce_mode_value(const std::string &mode) {
@@ -641,16 +679,26 @@ static void handle_message(const std::string &line, Job &job) {
             job.target = hex_to_bytes(vals[0]);
             std::cout << "[STRATUM] target " << vals[0] << "\n";
         }
+    } else if (method == "mining.set_difficulty") {
+        double difficulty = 0.0;
+        if (first_json_number_in_params(line, difficulty)) {
+            job.target = target_from_difficulty(difficulty);
+            std::cout << "[STRATUM] difficulty " << difficulty << "\n";
+        }
     } else if (method == "mining.notify") {
         auto vals = json_strings_in(params_substring(line));
         if (vals.size() >= 3) {
             job.id = vals[0];
             job.chain_index = vals[1];
-            job.header = hex_to_bytes(vals[2]);
-            job.ready = !job.target.empty();
-            std::cout << "[STRATUM] job=" << job.id
-                      << " chain=" << job.chain_index
-                      << " header=" << job.header.size() << " bytes\n";
+            try {
+                job.header = hex_to_bytes(vals[2]);
+                job.ready = !job.target.empty();
+                std::cout << "[STRATUM] job=" << job.id
+                          << " chain=" << job.chain_index
+                          << " header=" << job.header.size() << " bytes\n";
+            } catch (const std::exception &err) {
+                std::cerr << "[STRATUM] ignored bad job header: " << err.what() << "\n";
+            }
         }
     } else if (line.find("\"id\":\"3\"") != std::string::npos || line.find("\"id\":3") != std::string::npos) {
         std::string result = get_json_string_field(line, "result");
