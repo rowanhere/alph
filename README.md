@@ -145,15 +145,15 @@ Useful flags:
 --threads N             CUDA threads per block, default 256
 --blocks N              CUDA block count, default chosen from GPU SM count
 --nonce-bytes N         total ALPH nonce field bytes, default 24
---nonce-sans-bytes N    bytes searched/submitted as nonceSansExtraNonce, default 8
---nonce-mode MODE       replace-tail, replace-at, or append; default replace-tail
+--nonce-sans-bytes N    bytes submitted as nonceSansExtraNonce, default 22
+--nonce-mode MODE       prepend, replace-tail, replace-at, or append; default prepend
 --nonce-offset N        offset for replace-at mode
 --target-order be|le    target/hash comparison byte order, default be
 ```
 
-The defaults follow the common Alephium pool layout: the pool supplies an
-`extraNonce`, the miner searches an 8-byte `nonceSansExtraNonce`, and the full
-nonce field is written into the tail of the Stratum header before BLAKE3.
+The defaults follow Alephium's PoW layout: the pool supplies an `extraNonce`,
+the miner searches an 8-byte counter inside the 22-byte `nonceSansExtraNonce`,
+and the full 24-byte nonce is prepended to the header blob before BLAKE3.
 
 ## Status
 

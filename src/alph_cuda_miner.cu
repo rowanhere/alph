@@ -190,7 +190,8 @@ static __device__ bool meets_target(const uint8_t hash[32], bool target_big_endi
 enum NonceMode : int {
     NONCE_REPLACE_TAIL = 0,
     NONCE_REPLACE_AT = 1,
-    NONCE_APPEND = 2
+    NONCE_APPEND = 2,
+    NONCE_PREPEND = 3
 };
 
 __global__ void alph_mine_kernel(
@@ -200,6 +201,8 @@ __global__ void alph_mine_kernel(
     uint32_t nonce_sans_len,
     int nonce_mode,
     uint32_t nonce_offset,
+    int from_group,
+    int to_group,
     bool target_big_endian,
     uint64_t start_nonce,
     uint64_t total_nonces,
@@ -226,11 +229,18 @@ __global__ void alph_mine_kernel(
         #pragma unroll
         for (int i = 0; i < 32; ++i) nonce_field[i] = 0;
         for (uint32_t i = 0; i < extra_len && i < 32; ++i) nonce_field[i] = C_EXTRA_NONCE[i];
-        store64_be(nonce_field + extra_len, nonce, nonce_sans_len);
+        uint32_t counter_bytes = nonce_sans_len < 8u ? nonce_sans_len : 8u;
+        uint32_t counter_offset = extra_len + nonce_sans_len - counter_bytes;
+        store64_be(nonce_field + counter_offset, nonce, counter_bytes);
 
         uint32_t out_len = header_len;
         uint32_t offset = nonce_offset;
-        if (nonce_mode == NONCE_REPLACE_TAIL) {
+        if (nonce_mode == NONCE_PREPEND) {
+            out_len = header_len + nonce_total_len;
+            if (out_len > MAX_HEADER_BYTES) return;
+            for (uint32_t i = header_len; i > 0; --i) msg[i + nonce_total_len - 1] = msg[i - 1];
+            offset = 0;
+        } else if (nonce_mode == NONCE_REPLACE_TAIL) {
             offset = header_len >= nonce_total_len ? header_len - nonce_total_len : 0;
         } else if (nonce_mode == NONCE_APPEND) {
             offset = header_len;
@@ -243,7 +253,13 @@ __global__ void alph_mine_kernel(
         uint8_t hash[32];
         blake3_hash_small(msg, out_len, hash);
 
-        if (meets_target(hash, target_big_endian)) {
+        bool chain_ok = true;
+        if (from_group >= 0 && to_group >= 0) {
+            uint8_t chain = hash[31] & 0x0f;
+            chain_ok = (chain / 4 == (uint8_t)from_group) && (chain % 4 == (uint8_t)to_group);
+        }
+
+        if (chain_ok && meets_target(hash, target_big_endian)) {
             if (atomicCAS(found_flag, 0, 1) == 0) {
                 *found_nonce = (unsigned long long)nonce;
             }
@@ -262,8 +278,8 @@ struct Config {
     int threads = 256;
     int blocks = 0;
     uint32_t nonce_bytes = 24;
-    uint32_t nonce_sans_bytes = 8;
-    std::string nonce_mode = "replace-tail";
+    uint32_t nonce_sans_bytes = 22;
+    std::string nonce_mode = "prepend";
     uint32_t nonce_offset = 0;
     bool target_big_endian = true;
 };
@@ -275,6 +291,8 @@ struct Job {
     std::vector<uint8_t> target;
     std::vector<uint8_t> extra_nonce;
     std::string worker_id;
+    int from_group = -1;
+    int to_group = -1;
     bool ready = false;
 };
 
@@ -347,6 +365,20 @@ static std::string nonce_to_hex(uint64_t nonce, uint32_t bytes) {
     std::ostringstream out;
     out << std::hex << std::setfill('0');
     for (int i = (int)bytes - 1; i >= 0; --i) {
+        out << std::setw(2) << ((nonce >> (i * 8)) & 0xff);
+    }
+    return out.str();
+}
+
+static std::string nonce_sans_to_hex(uint64_t nonce, uint32_t nonce_sans_bytes) {
+    uint32_t counter_bytes = nonce_sans_bytes < 8u ? nonce_sans_bytes : 8u;
+    uint32_t zero_prefix = nonce_sans_bytes - counter_bytes;
+    std::ostringstream out;
+    out << std::hex << std::setfill('0');
+    for (uint32_t i = 0; i < zero_prefix; ++i) {
+        out << "00";
+    }
+    for (int i = (int)counter_bytes - 1; i >= 0; --i) {
         out << std::setw(2) << ((nonce >> (i * 8)) & 0xff);
     }
     return out.str();
@@ -536,10 +568,28 @@ static bool first_json_number_in_params(const std::string &json, double &value) 
     }
 }
 
+static bool get_json_number_field(const std::string &json, const std::string &field, double &value) {
+    std::string key = "\"" + field + "\"";
+    size_t p = json.find(key);
+    if (p == std::string::npos) return false;
+    p = json.find(':', p);
+    if (p == std::string::npos) return false;
+    p = json.find_first_of("-0123456789", p + 1);
+    if (p == std::string::npos) return false;
+    size_t e = json.find_first_not_of("0123456789.eE+-", p);
+    try {
+        value = std::stod(json.substr(p, e == std::string::npos ? std::string::npos : e - p));
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 static int nonce_mode_value(const std::string &mode) {
     if (mode == "replace-tail") return NONCE_REPLACE_TAIL;
     if (mode == "replace-at") return NONCE_REPLACE_AT;
     if (mode == "append") return NONCE_APPEND;
+    if (mode == "prepend") return NONCE_PREPEND;
     throw std::runtime_error("bad --nonce-mode: " + mode);
 }
 
@@ -558,7 +608,7 @@ struct MineResult {
 static MineResult mine_batch(const Config &cfg, const Job &job, uint64_t start_nonce, int blocks) {
     if (job.header.size() > MAX_HEADER_BYTES) throw std::runtime_error("header too large for this miner");
     if (job.extra_nonce.size() > 32) throw std::runtime_error("extraNonce too large");
-    if (cfg.nonce_bytes > 32 || cfg.nonce_sans_bytes > 8) throw std::runtime_error("nonce sizing too large");
+    if (cfg.nonce_bytes > 32 || cfg.nonce_sans_bytes > 31) throw std::runtime_error("nonce sizing too large");
     if (job.extra_nonce.size() + cfg.nonce_sans_bytes > cfg.nonce_bytes) {
         throw std::runtime_error("extraNonce + nonceSansExtraNonce exceeds nonce field length");
     }
@@ -602,6 +652,8 @@ static MineResult mine_batch(const Config &cfg, const Job &job, uint64_t start_n
         cfg.nonce_sans_bytes,
         nonce_mode_value(cfg.nonce_mode),
         cfg.nonce_offset,
+        job.from_group,
+        job.to_group,
         cfg.target_big_endian,
         start_nonce,
         cfg.batch,
@@ -721,6 +773,12 @@ static void handle_message(const std::string &line, Job &job) {
         std::string job_id = first_present_json_string_field(params, {"jobId", "job_id", "id"});
         std::string header_hex = first_present_json_string_field(params, {"header", "headerBlob", "blob", "blockHeader"});
         std::string chain_index = first_present_json_string_field(params, {"chainIndex", "chain_index"});
+        double from_group = -1.0;
+        double to_group = -1.0;
+        bool has_from_group = get_json_number_field(params, "fromGroup", from_group) ||
+                              get_json_number_field(params, "from_group", from_group);
+        bool has_to_group = get_json_number_field(params, "toGroup", to_group) ||
+                            get_json_number_field(params, "to_group", to_group);
 
         if (header_hex.empty()) {
             auto vals = json_strings_in(params);
@@ -754,10 +812,22 @@ static void handle_message(const std::string &line, Job &job) {
             try {
                 job.id = job_id.empty() ? job.id : job_id;
                 job.chain_index = chain_index;
+                if (has_from_group) job.from_group = (int)from_group;
+                if (has_to_group) job.to_group = (int)to_group;
+                if ((!has_from_group || !has_to_group) && !chain_index.empty() && looks_like_hex(chain_index)) {
+                    auto chain_bytes = hex_to_bytes(chain_index);
+                    if (!chain_bytes.empty()) {
+                        int chain = chain_bytes.back() & 0x0f;
+                        job.from_group = chain / 4;
+                        job.to_group = chain % 4;
+                    }
+                }
                 job.header = hex_to_bytes(header_hex);
                 job.ready = !job.target.empty();
                 std::cout << "[STRATUM] job=" << job.id
                           << " chain=" << job.chain_index
+                          << " from=" << job.from_group
+                          << " to=" << job.to_group
                           << " header=" << job.header.size() << " bytes\n";
             } catch (const std::exception &err) {
                 std::cerr << "[STRATUM] ignored bad job header: " << err.what()
@@ -839,7 +909,7 @@ int main(int argc, char **argv) {
                       << (avg / 1000000.0) << " MH/s avg, job=" << job.id << "\n";
 
             if (result.found) {
-                std::string nonce_hex = nonce_to_hex(result.nonce, cfg.nonce_sans_bytes);
+                std::string nonce_hex = nonce_sans_to_hex(result.nonce, cfg.nonce_sans_bytes);
                 std::ostringstream params;
                 params << "[\"" << json_escape(job.id) << "\",\"" << nonce_hex << "\"";
                 if (!job.worker_id.empty()) params << ",\"" << json_escape(job.worker_id) << "\"";
