@@ -455,18 +455,20 @@ static std::string params_substring(const std::string &json) {
     if (p == std::string::npos) return "";
     size_t start = json.find_first_not_of(" \t\r\n", p + 1);
     if (start == std::string::npos) return "";
-    if (json[start] != '[') {
+    if (json[start] != '[' && json[start] != '{') {
         size_t end = json.find_first_of(",}", start);
         return json.substr(start, end - start);
     }
+    char open = json[start];
+    char close = open == '[' ? ']' : '}';
     int depth = 0;
     bool in_string = false;
     for (size_t i = start; i < json.size(); ++i) {
         char c = json[i];
         if (c == '"' && (i == 0 || json[i - 1] != '\\')) in_string = !in_string;
         if (in_string) continue;
-        if (c == '[') ++depth;
-        if (c == ']') {
+        if (c == open) ++depth;
+        if (c == close) {
             --depth;
             if (depth == 0) return json.substr(start, i - start + 1);
         }
@@ -490,6 +492,24 @@ static std::vector<std::string> json_strings_in(const std::string &s) {
         p = e + 1;
     }
     return out;
+}
+
+static bool looks_like_hex(const std::string &s) {
+    std::string v = s;
+    if (starts_with(v, "0x")) v = v.substr(2);
+    if (v.empty()) return false;
+    for (char c : v) {
+        if (!std::isxdigit((unsigned char)c)) return false;
+    }
+    return true;
+}
+
+static std::string first_present_json_string_field(const std::string &json, const std::vector<std::string> &fields) {
+    for (const std::string &field : fields) {
+        std::string value = get_json_string_field(json, field);
+        if (!value.empty()) return value;
+    }
+    return "";
 }
 
 static bool first_json_number_in_params(const std::string &json, double &value) {
@@ -686,19 +706,54 @@ static void handle_message(const std::string &line, Job &job) {
             std::cout << "[STRATUM] difficulty " << difficulty << "\n";
         }
     } else if (method == "mining.notify") {
-        auto vals = json_strings_in(params_substring(line));
-        if (vals.size() >= 3) {
-            job.id = vals[0];
-            job.chain_index = vals[1];
+        std::string params = params_substring(line);
+        std::string job_id = first_present_json_string_field(params, {"jobId", "job_id", "id"});
+        std::string header_hex = first_present_json_string_field(params, {"header", "headerBlob", "blob", "blockHeader"});
+        std::string chain_index = first_present_json_string_field(params, {"chainIndex", "chain_index"});
+
+        if (header_hex.empty()) {
+            auto vals = json_strings_in(params);
+            std::vector<std::string> values;
+            for (const std::string &value : vals) {
+                if (value == "jobId" || value == "job_id" || value == "id" ||
+                    value == "fromGroup" || value == "toGroup" ||
+                    value == "chainIndex" || value == "chain_index" ||
+                    value == "header" || value == "headerBlob" ||
+                    value == "blob" || value == "blockHeader") {
+                    continue;
+                }
+                values.push_back(value);
+            }
+
+            for (const std::string &value : values) {
+                if (looks_like_hex(value) && value.size() >= 64) {
+                    header_hex = value;
+                    break;
+                }
+            }
+            if (job_id.empty() && !values.empty()) {
+                job_id = values[0];
+            }
+            if (chain_index.empty() && values.size() > 1) {
+                chain_index = values[1];
+            }
+        }
+
+        if (!header_hex.empty()) {
             try {
-                job.header = hex_to_bytes(vals[2]);
+                job.id = job_id.empty() ? job.id : job_id;
+                job.chain_index = chain_index;
+                job.header = hex_to_bytes(header_hex);
                 job.ready = !job.target.empty();
                 std::cout << "[STRATUM] job=" << job.id
                           << " chain=" << job.chain_index
                           << " header=" << job.header.size() << " bytes\n";
             } catch (const std::exception &err) {
-                std::cerr << "[STRATUM] ignored bad job header: " << err.what() << "\n";
+                std::cerr << "[STRATUM] ignored bad job header: " << err.what()
+                          << " raw=" << line << "\n";
             }
+        } else {
+            std::cerr << "[STRATUM] ignored notify without header raw=" << line << "\n";
         }
     } else if (line.find("\"id\":\"3\"") != std::string::npos || line.find("\"id\":3") != std::string::npos) {
         std::string result = get_json_string_field(line, "result");
