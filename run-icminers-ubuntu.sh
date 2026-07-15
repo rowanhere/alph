@@ -17,4 +17,3 @@ exec ./alph-cuda-miner \
   -u "$WALLET_WORKER" \
   -p "$PASSWORD" \
   --device "$DEVICE"
-

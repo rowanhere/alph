@@ -39,7 +39,7 @@ Ubuntu quick build:
 sudo apt update
 sudo apt install -y build-essential nvidia-cuda-toolkit
 cd alph-cuda-miner
-chmod +x build-ubuntu.sh run-icminers-ubuntu.sh
+chmod +x build-ubuntu.sh run-icminers-ubuntu.sh run-icminers-multigpu-ubuntu.sh
 ./build-ubuntu.sh
 ```
 
@@ -104,6 +104,22 @@ Optional environment overrides:
 
 ```bash
 POOL_URL=stratum+tcp://us.icminers.com:9161 DEVICE=1 ./run-icminers-ubuntu.sh YOUR_WALLET_ADDRESS.worker1
+```
+
+Multi-GPU run, one miner process per CUDA device:
+
+```bash
+DEVICES=0,1,2,3 ./run-icminers-multigpu-ubuntu.sh YOUR_WALLET_ADDRESS.worker1
+tail -f logs/gpu*.log
+```
+
+Each GPU gets a distinct worker suffix, for example:
+
+```text
+YOUR_WALLET_ADDRESS.worker1.gpu0
+YOUR_WALLET_ADDRESS.worker1.gpu1
+YOUR_WALLET_ADDRESS.worker1.gpu2
+YOUR_WALLET_ADDRESS.worker1.gpu3
 ```
 
 Windows:
