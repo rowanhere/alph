@@ -6,7 +6,7 @@ BASE_USER="${1:-${ALPH_USER:-$DEFAULT_ALPH_USER}}"
 POOL_URL="${POOL_URL:-stratum+tcp://us.icminers.com:9160}"
 PASSWORD="${PASSWORD:-x}"
 DEVICES="${DEVICES:-0,1,2,3}"
-REFRESH="${REFRESH:-2}"
+REFRESH="${REFRESH:-10}"
 
 if [[ -z "$BASE_USER" ]]; then
   echo "Usage: DEVICES=0,1,2,3 ./run-srb-dashboard-ubuntu.sh WALLET.worker" >&2
@@ -70,6 +70,32 @@ field_or_dash() {
   fi
 }
 
+format_rate() {
+  local mh="$1"
+  if [[ -z "$mh" || "$mh" == "-" ]]; then
+    printf -- "-"
+    return
+  fi
+
+  awk -v mh="$mh" '
+    BEGIN {
+      h = mh * 1000000.0
+      split("H/s KH/s MH/s GH/s TH/s PH/s", u, " ")
+      i = 1
+      while (h >= 1000.0 && i < 6) {
+        h /= 1000.0
+        i++
+      }
+      if (h >= 100) {
+        printf "%.0f %s", h, u[i]
+      } else if (h >= 10) {
+        printf "%.1f %s", h, u[i]
+      } else {
+        printf "%.2f %s", h, u[i]
+      }
+    }'
+}
+
 render_gpu() {
   local device="$1"
   local log="logs/gpu${device}.log"
@@ -88,8 +114,11 @@ render_gpu() {
     local miner_line
     miner_line="$(grep -a '\[MINER\]' "$log" | tail -n 1 || true)"
     if [[ -n "$miner_line" ]]; then
-      current="$(echo "$miner_line" | sed -n 's/.*\[MINER\] \([0-9.]* MH\/s\) current.*/\1/p')"
-      avg="$(echo "$miner_line" | sed -n 's/.*current, \([0-9.]* MH\/s\) avg.*/\1/p')"
+      local current_mh avg_mh
+      current_mh="$(echo "$miner_line" | sed -n 's/.*\[MINER\] \([0-9.]*\) MH\/s current.*/\1/p')"
+      avg_mh="$(echo "$miner_line" | sed -n 's/.*current, \([0-9.]*\) MH\/s avg.*/\1/p')"
+      current="$(format_rate "$current_mh")"
+      avg="$(format_rate "$avg_mh")"
       job="$(echo "$miner_line" | sed -n 's/.*job=\([^ ]*\).*/\1/p')"
       status="mining"
     fi
@@ -120,8 +149,9 @@ render_gpu() {
 }
 
 tput civis >/dev/null 2>&1 || true
+printf '\033[2J\033[H'
 while true; do
-  clear
+  printf '\033[H'
   echo "ALPH CUDA MINER - SRB STYLE DASHBOARD"
   echo "Pool: ${POOL_URL}"
   echo "User: ${BASE_USER}.*"
@@ -135,5 +165,6 @@ while true; do
   done
   echo "=========================================================================="
   echo "Ctrl+C to stop all GPUs. Logs: logs/gpuN.log"
+  printf '\033[J'
   sleep "$REFRESH"
 done

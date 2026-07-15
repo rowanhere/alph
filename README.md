@@ -119,8 +119,8 @@ Vast.ai / VPS dashboard mode:
 DEVICES=0,1,2,3 ./run-srb-dashboard-ubuntu.sh
 ```
 
-This dashboard redraws in-place every 2 seconds and avoids flooding the SSH
-terminal. Tune refresh speed with `REFRESH=5`.
+This dashboard redraws in-place every 10 seconds and avoids flooding the SSH
+terminal. Tune refresh speed with `REFRESH=30` or similar.
 
 Each GPU gets a distinct worker suffix, for example:
 
