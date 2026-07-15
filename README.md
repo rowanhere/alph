@@ -90,33 +90,33 @@ Shared pool example:
 ```bash
 ./alph-cuda-miner \
   -o stratum+tcp://us.icminers.com:9160 \
-  -u YOUR_WALLET_ADDRESS.worker1 \
+  -u 3cUq7e2scUmfZYsPTndakWSmjihxTWrEqjD7isyRTQK1AjtKNMpGY.worker1 \
   -p x
 ```
 
 Or use the Ubuntu helper:
 
 ```bash
-./run-icminers-ubuntu.sh YOUR_WALLET_ADDRESS.worker1
+./run-icminers-ubuntu.sh
 ```
 
 Optional environment overrides:
 
 ```bash
-POOL_URL=stratum+tcp://us.icminers.com:9161 DEVICE=1 ./run-icminers-ubuntu.sh YOUR_WALLET_ADDRESS.worker1
+POOL_URL=stratum+tcp://us.icminers.com:9161 DEVICE=1 ./run-icminers-ubuntu.sh
 ```
 
 Multi-GPU run, one miner process per CUDA device:
 
 ```bash
-DEVICES=0,1,2,3 ./run-icminers-multigpu-ubuntu.sh YOUR_WALLET_ADDRESS.worker1
+DEVICES=0,1,2,3 ./run-icminers-multigpu-ubuntu.sh
 tail -f logs/gpu*.log
 ```
 
 Vast.ai / VPS dashboard mode:
 
 ```bash
-DEVICES=0,1,2,3 ./run-srb-dashboard-ubuntu.sh YOUR_WALLET_ADDRESS.worker1
+DEVICES=0,1,2,3 ./run-srb-dashboard-ubuntu.sh
 ```
 
 This dashboard redraws in-place every 2 seconds and avoids flooding the SSH
@@ -125,16 +125,16 @@ terminal. Tune refresh speed with `REFRESH=5`.
 Each GPU gets a distinct worker suffix, for example:
 
 ```text
-YOUR_WALLET_ADDRESS.worker1.gpu0
-YOUR_WALLET_ADDRESS.worker1.gpu1
-YOUR_WALLET_ADDRESS.worker1.gpu2
-YOUR_WALLET_ADDRESS.worker1.gpu3
+3cUq7e2scUmfZYsPTndakWSmjihxTWrEqjD7isyRTQK1AjtKNMpGY.worker1.gpu0
+3cUq7e2scUmfZYsPTndakWSmjihxTWrEqjD7isyRTQK1AjtKNMpGY.worker1.gpu1
+3cUq7e2scUmfZYsPTndakWSmjihxTWrEqjD7isyRTQK1AjtKNMpGY.worker1.gpu2
+3cUq7e2scUmfZYsPTndakWSmjihxTWrEqjD7isyRTQK1AjtKNMpGY.worker1.gpu3
 ```
 
 Windows:
 
 ```powershell
-.\alph-cuda-miner.exe -o stratum+tcp://us.icminers.com:9160 -u YOUR_WALLET_ADDRESS.worker1 -p x
+.\alph-cuda-miner.exe -o stratum+tcp://us.icminers.com:9160 -u 3cUq7e2scUmfZYsPTndakWSmjihxTWrEqjD7isyRTQK1AjtKNMpGY.worker1 -p x
 ```
 
 Useful flags:

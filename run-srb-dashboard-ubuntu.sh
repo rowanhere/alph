@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_USER="${1:-${ALPH_USER:-}}"
+DEFAULT_ALPH_USER="3cUq7e2scUmfZYsPTndakWSmjihxTWrEqjD7isyRTQK1AjtKNMpGY.worker1"
+BASE_USER="${1:-${ALPH_USER:-$DEFAULT_ALPH_USER}}"
 POOL_URL="${POOL_URL:-stratum+tcp://us.icminers.com:9160}"
 PASSWORD="${PASSWORD:-x}"
 DEVICES="${DEVICES:-0,1,2,3}"
 REFRESH="${REFRESH:-2}"
 
 if [[ -z "$BASE_USER" ]]; then
-  echo "Usage: DEVICES=0,1,2,3 ./run-srb-dashboard-ubuntu.sh YOUR_WALLET_ADDRESS.worker1" >&2
-  echo "Or set ALPH_USER=YOUR_WALLET_ADDRESS.worker1" >&2
+  echo "Usage: DEVICES=0,1,2,3 ./run-srb-dashboard-ubuntu.sh WALLET.worker" >&2
+  echo "Or set ALPH_USER=WALLET.worker" >&2
   exit 2
 fi
 
