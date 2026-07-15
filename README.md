@@ -39,7 +39,7 @@ Ubuntu quick build:
 sudo apt update
 sudo apt install -y build-essential nvidia-cuda-toolkit
 cd alph-cuda-miner
-chmod +x build-ubuntu.sh run-icminers-ubuntu.sh run-icminers-multigpu-ubuntu.sh
+chmod +x build-ubuntu.sh run-icminers-ubuntu.sh run-icminers-multigpu-ubuntu.sh run-srb-dashboard-ubuntu.sh
 ./build-ubuntu.sh
 ```
 
@@ -112,6 +112,15 @@ Multi-GPU run, one miner process per CUDA device:
 DEVICES=0,1,2,3 ./run-icminers-multigpu-ubuntu.sh YOUR_WALLET_ADDRESS.worker1
 tail -f logs/gpu*.log
 ```
+
+Vast.ai / VPS dashboard mode:
+
+```bash
+DEVICES=0,1,2,3 ./run-srb-dashboard-ubuntu.sh YOUR_WALLET_ADDRESS.worker1
+```
+
+This dashboard redraws in-place every 2 seconds and avoids flooding the SSH
+terminal. Tune refresh speed with `REFRESH=5`.
 
 Each GPU gets a distinct worker suffix, for example:
 

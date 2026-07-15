@@ -772,6 +772,8 @@ static void handle_message(const std::string &line, Job &job) {
             job.worker_id = result;
             std::cout << "[STRATUM] workerId " << result << "\n";
         }
+    } else if (line.find("\"id\":\"4\"") != std::string::npos || line.find("\"id\":4") != std::string::npos) {
+        std::cout << "[SUBMIT] " << line << "\n";
     } else if (line.find("\"id\"") != std::string::npos && line.find("\"result\"") != std::string::npos) {
         std::cout << "[STRATUM] " << line << "\n";
     } else if (!line.empty()) {
